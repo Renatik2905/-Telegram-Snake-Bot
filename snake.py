@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 
-TOKEN = "7301826777:AAFldqBZmwjeBfmNjIfufUs8tl2YqZzJUDo"  # Замените на свой токен
+TOKEN = ""  # Замените на свой токен
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 router = Router()
