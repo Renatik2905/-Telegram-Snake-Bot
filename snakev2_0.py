@@ -5,13 +5,13 @@ from aiogram import Bot, Dispatcher, Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 
-TOKEN = "YOUR_BOT_TOKEN"  # Замените на свой токен
+TOKEN = ""  # Замените на свой токен
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 router = Router()
 dp.include_router(router)
 
-# Размер игрового поля и базовые настройки
+# Размер игрового поля
 GRID_SIZE = 10
 SPEED = 0.3  # Базовая скорость змейки
 
@@ -27,7 +27,6 @@ game_data = {}
 
 async def start_game(chat_id, difficulty=1):
     """Инициализация новой игры с учётом сложности."""
-    # Устанавливаем параметры в зависимости от сложности
     global SPEED
     if difficulty == 1:
         SPEED = 0.3
@@ -45,6 +44,11 @@ async def start_game(chat_id, difficulty=1):
 
 async def update_game_message(chat_id):
     """Обновление игрового поля и отображение очков."""
+    # Проверь, существует ли chat_id в game_data
+    if chat_id not in game_data:
+        await bot.send_message(chat_id, "Игра не началась! Напишите /start.")
+        return
+
     data = game_data[chat_id]
     snake = data["snake"]
     food = data["food"]
@@ -58,31 +62,40 @@ async def update_game_message(chat_id):
     grid[food[0]][food[1]] = "🍎"
 
     field = "\n".join("".join(row) for row in grid)
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("⬆", callback_data="move_⬆"),
-        InlineKeyboardButton("⬇", callback_data="move_⬇"),
-        InlineKeyboardButton("⬅", callback_data="move_⬅"),
-        InlineKeyboardButton("➡", callback_data="move_➡")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬆", callback_data="move_⬆")],
+        [InlineKeyboardButton(text="⬅", callback_data="move_⬅"),
+         InlineKeyboardButton(text="➡", callback_data="move_➡")],
+        [InlineKeyboardButton(text="⬇", callback_data="move_⬇")]
+    ])
     
     # Отображаем очки и сложность
     await bot.send_message(chat_id, f"Сложность: {data['difficulty']}\nОчки: {score}\n\n{field}", reply_markup=keyboard)
 
 @router.message(Command("start"))
 async def send_welcome(message: types.Message):
-    """Обработчик команды /start"""
-    await message.answer("Привет! Это змейка в Telegram. Используй кнопки для управления. Выберите сложность: 1 - Легко, 2 - Средне, 3 - Сложно.")
-    
-    # Начинаем игру с легкой сложности
-    await start_game(message.chat.id, difficulty=1)
+    """Обработчик команды /start для выбора уровня сложности"""
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Легко", callback_data="difficulty_1")],
+        [InlineKeyboardButton(text="Средне", callback_data="difficulty_2")],
+        [InlineKeyboardButton(text="Сложно", callback_data="difficulty_3")]
+    ])
+    await message.answer("Привет! Это змейка в Telegram. Выберите уровень сложности:", reply_markup=markup)
+
+@router.callback_query(lambda c: c.data.startswith("difficulty_"))
+async def set_difficulty(callback_query: types.CallbackQuery):
+    """Обработчик выбора сложности"""
+    difficulty = int(callback_query.data.split("_")[1])
+    chat_id = callback_query.message.chat.id
+    await callback_query.answer()  # Закрываем уведомление о кнопке
+    await start_game(chat_id, difficulty)
 
 @router.callback_query(lambda c: c.data.startswith("move_"))
 async def move_snake(callback_query: types.CallbackQuery):
     """Обработчик движения змейки"""
     chat_id = callback_query.message.chat.id
-    if chat_id not in game_data:
-        await start_game(chat_id)
+    if chat_id not in game_data:  # Проверяем, что игра началась
+        await callback_query.answer("Игра ещё не началась! Напишите /start для начала.")
         return
     
     new_direction = callback_query.data.split("_")[1]
@@ -124,12 +137,17 @@ async def move_snake_logic(chat_id):
     if new_head == food:
         data["food"] = (random.randint(0, GRID_SIZE - 1), random.randint(0, GRID_SIZE - 1))  # Новая еда
         data["score"] += 1  # Увеличиваем очки
-        # Увеличиваем сложность по мере роста очков
+        
+        # Проверка на достижение 5 очков
         if data["score"] % 5 == 0:
-            data["difficulty"] += 1
-            await start_game(chat_id, difficulty=data["difficulty"])
+            # Увеличиваем сложность, но не перезапускаем игру
+            if data["difficulty"] < 3:  # Максимальная сложность 3
+                data["difficulty"] += 1
+                await bot.send_message(chat_id, f"Сложность увеличена до {data['difficulty']}!")
+    
     else:
         snake.pop(0)  # Удаляем хвост, если не съедена еда
+
 
 async def main():
     logging.basicConfig(level=logging.INFO)
